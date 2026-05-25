@@ -16,6 +16,8 @@ import announcementRouter from './admin/announcement.route.js';
 import settingsRouter from './admin/settings.route.js';
 import analyticsRouter from './admin/analytics.route.js';
 import uploadRouter from './upload.route.js';
+import userChatRouter from './user/chat.route.js';
+import adminChatRouter from './admin/chat.route.js';
 
 const router = Router();
 
@@ -36,5 +38,7 @@ router.use('/announcements', announcementRouter);
 router.use('/settings', settingsRouter);
 router.use('/analytics', analyticsRouter);
 router.use('/upload', uploadRouter);
+router.use('/chat', userChatRouter);
+router.use('/admin-chat', adminChatRouter);
 
 export default router;
