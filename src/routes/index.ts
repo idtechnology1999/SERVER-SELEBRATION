@@ -1,0 +1,40 @@
+import { Router } from 'express';
+import authRouter from './admin/auth.route.js';
+import emailBlastRouter from './admin/emailBlast.route.js';
+import adminMgmtRouter from './admin/admin-management.route.js';
+import notificationRouter from './admin/notification.route.js';
+import userAuthRouter from './user/auth.route.js';
+import studentRouter from './user/student.route.js';
+import studentNotifRouter from './user/notification.route.js';
+import paymentRouter from './user/payment.route.js';
+import userRouter from './admin/user.route.js';
+import courseRouter from './admin/course.route.js';
+import withdrawalRouter from './admin/withdrawal.route.js';
+import commissionRouter from './admin/commission.route.js';
+import dashboardRouter from './admin/dashboard.route.js';
+import announcementRouter from './admin/announcement.route.js';
+import settingsRouter from './admin/settings.route.js';
+import analyticsRouter from './admin/analytics.route.js';
+import uploadRouter from './upload.route.js';
+
+const router = Router();
+
+router.use('/auth', authRouter);
+router.use('/email-blast', emailBlastRouter);
+router.use('/admins', adminMgmtRouter);
+router.use('/notifications', notificationRouter);
+router.use('/user-auth', userAuthRouter);
+router.use('/student', studentRouter);
+router.use('/student/notifications', studentNotifRouter);
+router.use('/payment', paymentRouter);
+router.use('/users', userRouter);
+router.use('/courses', courseRouter);
+router.use('/withdrawals', withdrawalRouter);
+router.use('/commissions', commissionRouter);
+router.use('/dashboard', dashboardRouter);
+router.use('/announcements', announcementRouter);
+router.use('/settings', settingsRouter);
+router.use('/analytics', analyticsRouter);
+router.use('/upload', uploadRouter);
+
+export default router;
