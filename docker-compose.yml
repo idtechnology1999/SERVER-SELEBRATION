@@ -1,0 +1,19 @@
+services:
+  server:
+    image: selebration-server
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./.env
+    restart: unless-stopped
+
+  admin:
+      image: selebration-admin
+      ports:
+        - "8081:80"
+      restart: unless-stopped
+  user:
+      image: selebration-user
+      ports:
+        - "8082:80"
+      restart: unless-stopped

@@ -79,7 +79,7 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 
 // POST /api/courses/:id/stages/:stage/videos — add video to a stage
 router.post('/:id/stages/:stage/videos', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { stage } = req.params;
+  const stage = String(req.params.stage);
   if (!VALID_STAGES.includes(stage)) {
     res.status(400).json({ success: false, message: 'Invalid stage' });
     return;

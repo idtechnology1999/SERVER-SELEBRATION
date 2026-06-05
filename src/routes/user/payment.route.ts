@@ -179,7 +179,9 @@ router.post('/init-module', requireUserAuth, async (req: UserAuthRequest, res: R
     const course = await Course.findById(courseId);
     if (!course) { res.status(404).json({ success: false, message: 'Course not found' }); return; }
 
-    const mod = (course.modules as any[]).find((m: any) => m._id.toString() === moduleId);
+   const mod = ((course as any).modules as any[])?.find(
+     (m: any) => m._id.toString() === moduleId,
+   );
     if (!mod) { res.status(404).json({ success: false, message: 'Module not found' }); return; }
     if (mod.isFree) { res.status(400).json({ success: false, message: 'Module is free' }); return; }
 
