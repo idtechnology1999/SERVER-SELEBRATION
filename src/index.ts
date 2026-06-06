@@ -47,7 +47,7 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Capture raw body for Paystack webhook HMAC verification, then parse JSON for everything else
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (req.path === '/api/payment/webhook') {
+  if (req.path === '/payment/webhook') {
     let data = Buffer.alloc(0);
     req.on('data', (chunk: Buffer) => { data = Buffer.concat([data, chunk]); });
     req.on('end', () => {
@@ -63,7 +63,7 @@ app.get('/', (_req, res) => {
   res.json({ message: 'Selliberation API is running' });
 });
 
-app.use('/api', routes);
+app.use('/', routes);
 
 // Global error handler — catches any unhandled error thrown in route handlers
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

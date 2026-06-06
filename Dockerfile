@@ -28,6 +28,6 @@ RUN mkdir -p /app/uploads && chown -R appuser:appgroup /app/uploads
 
 USER appuser
 
-EXPOSE 3000
+EXPOSE 5000
 
 CMD [ "node", "dist/index.js" ]
