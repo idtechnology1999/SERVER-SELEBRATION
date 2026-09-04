@@ -2,4 +2,4 @@ node_modules/
 dist/
 .env
 *.log
-uploads/
+uploads/github ghcr token

@@ -7,7 +7,7 @@ const videoSchema = new mongoose.Schema({
   orderIndex:  { type: Number, default: 0 },
 }, { _id: true });
 
-const STAGE_KEYS = ['free', 'fish', 'shark', 'whale'] as const;
+const STAGE_KEYS = ['fish', 'dolphin', 'shark', 'whale'] as const;
 
 const stageSchema = new mongoose.Schema({
   stage:  { type: String, enum: STAGE_KEYS, required: true },
@@ -19,6 +19,7 @@ const courseSchema = new mongoose.Schema({
   description:   { type: String, default: '' },
   thumbnail:     { type: String, default: '' },
   status:        { type: String, enum: ['active', 'inactive'], default: 'active' },
+  stage:         { type: String, enum: STAGE_KEYS, required: true },
   whatYouLearn:  [String],
   stages: {
     type: [stageSchema],
@@ -27,17 +28,17 @@ const courseSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 export const STAGE_PRICES: Record<string, number> = {
-  free:  0,
-  fish:  5000,
-  shark: 15000,
-  whale: 150000,
+  fish:    5000,
+  dolphin: 15000,
+  shark:   50000,
+  whale:   150000,
 };
 
 export const STAGE_LABELS: Record<string, string> = {
-  free:  'Free',
-  fish:  'Become a Fish',
-  shark: 'Become a Shark',
-  whale: 'Become a Whale',
+  fish:    'Become a Fish',
+  dolphin: 'Become a Dolphin',
+  shark:   'Become a Shark',
+  whale:   'Become a Whale',
 };
 
 export const Course = mongoose.model('Course', courseSchema);

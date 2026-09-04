@@ -29,6 +29,8 @@ const userSchema = new mongoose.Schema({
   bankCode:      { type: String, default: '' },
   accountNumber: { type: String, default: '' },
   accountName:   { type: String, default: '' },
+  resetPasswordToken:  { type: String, default: null },
+  resetPasswordExpiry: { type: Date, default: null },
 }, { timestamps: true });
 
 export const User = mongoose.model('User', userSchema);

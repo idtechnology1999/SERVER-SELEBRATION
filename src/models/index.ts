@@ -7,3 +7,4 @@ export { Settings } from './Settings.js';
 export { Admin } from './Admin.js';
 export { ModuleUnlock } from './ModuleUnlock.js';
 export { Notification } from './Notification.js';
+export { UsedReference } from './UsedReference.js';

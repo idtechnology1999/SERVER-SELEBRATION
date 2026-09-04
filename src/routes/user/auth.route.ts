@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
 import { User } from '../../models/User.js';
@@ -274,6 +275,95 @@ router.get('/me', requireUserAuth, async (req: UserAuthRequest, res: Response) =
 // POST /user-auth/logout
 router.post('/logout', requireUserAuth, (_req: UserAuthRequest, res: Response) => {
   res.json({ success: true, message: 'Logged out' });
+});
+
+const FRONTEND_URL = () => process.env.FRONTEND_URL || 'http://localhost:5173';
+
+// POST /user-auth/forgot-password
+router.post('/forgot-password', authLimiter, async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      res.status(400).json({ success: false, message: 'Email is required' });
+      return;
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+
+    // Always return success to prevent email enumeration
+    if (!user) {
+      res.json({ success: true, message: 'If an account exists with that email, a reset link has been sent.' });
+      return;
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await User.findByIdAndUpdate(user._id, {
+      resetPasswordToken: token,
+      resetPasswordExpiry: expiry,
+    });
+
+    const resetLink = `${FRONTEND_URL()}/reset-password?token=${token}`;
+
+    await sendMail(user.email, 'Reset your Selebration password', `
+      <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;background:#f9f9f9;border-radius:12px;">
+        <h2 style="color:#0D2847;">Reset your password</h2>
+        <p>Hi <strong>${user.name}</strong>, we received a request to reset your Selebration password.</p>
+        <p>Click the button below to choose a new password. This link expires in <strong>1 hour</strong>.</p>
+        <div style="text-align:center;margin:32px 0;">
+          <a href="${resetLink}"
+             style="display:inline-block;background:#F5820A;color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 36px;border-radius:8px;">
+            Reset Password →
+          </a>
+        </div>
+        <p style="color:#888;font-size:13px;">If you did not request a password reset, you can safely ignore this email.</p>
+      </div>
+    `);
+
+    res.json({ success: true, message: 'If an account exists with that email, a reset link has been sent.' });
+  } catch (err: any) {
+    console.error('[forgot-password error]', err.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// POST /user-auth/reset-password
+router.post('/reset-password', authLimiter, async (req: Request, res: Response) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) {
+      res.status(400).json({ success: false, message: 'Token and new password are required' });
+      return;
+    }
+    if (password.length < 6) {
+      res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
+      return;
+    }
+
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpiry: { $gt: new Date() },
+    });
+
+    if (!user) {
+      res.status(400).json({ success: false, message: 'This reset link is invalid or has expired.' });
+      return;
+    }
+
+    const hashed = await bcrypt.hash(password, 10);
+
+    await User.findByIdAndUpdate(user._id, {
+      password: hashed,
+      resetPasswordToken: null,
+      resetPasswordExpiry: null,
+    });
+
+    res.json({ success: true, message: 'Password updated successfully. You can now log in.' });
+  } catch (err: any) {
+    console.error('[reset-password error]', err.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
 });
 
 export default router;
