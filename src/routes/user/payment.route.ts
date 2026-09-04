@@ -5,6 +5,7 @@ import { requireUserAuth, type UserAuthRequest } from '../../middleware/userAuth
 import { User } from '../../models/User.js';
 import { Course } from '../../models/Course.js';
 import { ModuleUnlock } from '../../models/ModuleUnlock.js';
+import { UsedReference } from '../../models/UsedReference.js';
 import { distributeCommissions } from '../../utils/distributeCommissions.js';
 import { emit } from '../../socket.js';
 
@@ -107,6 +108,12 @@ router.get('/verify', requireUserAuth, async (req: UserAuthRequest, res: Respons
       return;
     }
 
+    const used = await UsedReference.findOne({ reference });
+    if (used) {
+      res.status(400).json({ success: false, message: 'Payment already processed' });
+      return;
+    }
+
     const data = await paystackGet(`/transaction/verify/${encodeURIComponent(reference)}`);
 
     if (!data.status || data.data?.status !== 'success') {
@@ -118,14 +125,22 @@ router.get('/verify', requireUserAuth, async (req: UserAuthRequest, res: Respons
     }
 
     const tx = data.data;
-    const userId = tx.metadata?.userId || req.user!.id;
     const price = await getSubscriptionPrice();
+
+    if (tx.amount < price * 100) {
+      res.status(400).json({ success: false, message: 'Payment amount does not match price' });
+      return;
+    }
+
+    const userId = req.user!.id;
 
     const user = await User.findById(userId);
     if (!user) {
       res.status(404).json({ success: false, message: 'User not found' });
       return;
     }
+
+    await UsedReference.create({ reference, userId, purpose: 'subscription', amount: tx.amount / 100 });
 
     if (user.subscription !== 'active') {
       const nextMonth = new Date();
@@ -233,6 +248,12 @@ router.get('/verify-module', requireUserAuth, async (req: UserAuthRequest, res: 
       return;
     }
 
+    const used = await UsedReference.findOne({ reference });
+    if (used) {
+      res.status(400).json({ success: false, message: 'Payment already processed' });
+      return;
+    }
+
     const data = await paystackGet(`/transaction/verify/${encodeURIComponent(reference)}`);
     if (!data.status || data.data?.status !== 'success') {
       res.status(400).json({ success: false, message: data.data?.gateway_response || 'Payment not successful' });
@@ -240,17 +261,33 @@ router.get('/verify-module', requireUserAuth, async (req: UserAuthRequest, res: 
     }
 
     const tx = data.data;
-    const { userId, moduleId, courseId, type } = tx.metadata || {};
+    const { moduleId, courseId, type } = tx.metadata || {};
 
     if (type !== 'module' || !moduleId || !courseId) {
       res.status(400).json({ success: false, message: 'Invalid payment type' });
       return;
     }
 
-    const actualUserId = userId || req.user!.id;
+    const course = await Course.findById(courseId);
+    if (!course) { res.status(404).json({ success: false, message: 'Course not found' }); return; }
+
+    const mod = ((course as any).modules as any[])?.find(
+      (m: any) => m._id.toString() === moduleId,
+    );
+    if (!mod) { res.status(404).json({ success: false, message: 'Module not found' }); return; }
+
+    if (tx.amount < (mod.price ?? 0) * 100) {
+      res.status(400).json({ success: false, message: 'Payment amount does not match price' });
+      return;
+    }
+
+    const userId = req.user!.id;
+
+    await UsedReference.create({ reference, userId, purpose: 'module', amount: tx.amount / 100 });
+
     await ModuleUnlock.findOneAndUpdate(
-      { userId: actualUserId, moduleId },
-      { userId: actualUserId, courseId, moduleId, amount: tx.amount / 100, reference },
+      { userId, moduleId },
+      { userId, courseId, moduleId, amount: tx.amount / 100, reference },
       { upsert: true, new: true }
     );
 
@@ -316,6 +353,12 @@ router.get('/verify-stage', requireUserAuth, async (req: UserAuthRequest, res: R
       return;
     }
 
+    const used = await UsedReference.findOne({ reference });
+    if (used) {
+      res.status(400).json({ success: false, message: 'Payment already processed' });
+      return;
+    }
+
     const data = await paystackGet(`/transaction/verify/${encodeURIComponent(reference)}`);
     if (!data.status || data.data?.status !== 'success') {
       res.status(400).json({ success: false, message: data.data?.gateway_response || 'Payment not successful' });
@@ -323,24 +366,31 @@ router.get('/verify-stage', requireUserAuth, async (req: UserAuthRequest, res: R
     }
 
     const tx = data.data;
-    const { userId, stage } = tx.metadata || {};
+    const { stage } = tx.metadata || {};
 
     if (!stage || !STAGE_NUMBERS[stage]) {
       res.status(400).json({ success: false, message: 'Invalid payment metadata' });
       return;
     }
 
-    const stageNum = STAGE_NUMBERS[stage];
-    const actualUserId = userId || req.user!.id;
+    if (tx.amount < STAGE_PRICES[stage] * 100) {
+      res.status(400).json({ success: false, message: 'Payment amount does not match price' });
+      return;
+    }
 
-    const user = await User.findById(actualUserId);
+    const stageNum = STAGE_NUMBERS[stage];
+    const userId = req.user!.id;
+
+    const user = await User.findById(userId);
     if (!user) { res.status(404).json({ success: false, message: 'User not found' }); return; }
 
+    await UsedReference.create({ reference, userId, purpose: 'stage', amount: tx.amount / 100 });
+
     if ((user.stage ?? 0) < stageNum) {
-      await User.findByIdAndUpdate(actualUserId, { stage: stageNum, subscription: 'active' });
-      await distributeCommissions(actualUserId, tx.amount / 100);
+      await User.findByIdAndUpdate(userId, { stage: stageNum, subscription: 'active' });
+      await distributeCommissions(userId, tx.amount / 100);
       emit('payment:new', {
-        userId: actualUserId,
+        userId,
         user: user.name || user.email,
         amount: tx.amount / 100,
         date: new Date().toISOString(),
@@ -405,24 +455,52 @@ router.post('/webhook', async (req: Request, res: Response) => {
 
     const event = JSON.parse(rawBody.toString());
 
-    if (event.event === 'charge.success') {
+    if (event.event === "charge.success") {
       const tx = event.data;
       const userId = tx.metadata?.userId;
-      if (!userId) { res.sendStatus(200); return; }
+      if (!userId) {
+        res.sendStatus(200);
+        return;
+      }
+
+      // Prevent replay attacks
+      const used = await UsedReference.findOne({ reference: tx.reference });
+      if (used) {
+        res.sendStatus(200);
+        return;
+      }
 
       const user = await User.findById(userId);
-      if (!user) { res.sendStatus(200); return; }
+      if (!user) {
+        res.sendStatus(200);
+        return;
+      }
 
-      if (user.subscription !== 'active') {
+      // Mark reference as used immediately
+      await UsedReference.create({
+        reference: tx.reference,
+        userId,
+        purpose: "subscription",
+        amount: tx.amount / 100,
+      });
+
+      if (user.subscription !== "active") {
         const nextMonth = new Date();
         nextMonth.setMonth(nextMonth.getMonth() + 1);
 
         await User.findByIdAndUpdate(userId, {
-          subscription: 'active',
+          subscription: "active",
           trialEndsAt: nextMonth,
         });
 
         await distributeCommissions(userId, tx.amount / 100);
+
+        emit("payment:new", {
+          userId,
+          user: user.name || user.email,
+          amount: tx.amount / 100,
+          date: new Date().toISOString(),
+        });
       }
     }
 

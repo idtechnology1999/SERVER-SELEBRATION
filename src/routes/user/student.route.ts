@@ -255,12 +255,12 @@ router.get('/referrals', async (req: UserAuthRequest, res: Response) => {
 function accessibleStages(stage: number, subscription: string, trialEndsAt?: Date): string[] {
   const now = new Date();
   const trialActive = subscription === 'trial' && trialEndsAt && trialEndsAt > now;
-  if (trialActive) return ['free'];
+  if (trialActive) return ['fish'];
   if (subscription !== 'active') return [];
-  if (stage >= 3) return ['free', 'fish', 'shark', 'whale'];
-  if (stage >= 2) return ['free', 'fish', 'shark'];
-  if (stage >= 1) return ['free', 'fish'];
-  return ['free'];
+  if (stage >= 3) return ['fish', 'dolphin', 'shark', 'whale'];
+  if (stage >= 2) return ['fish', 'dolphin', 'shark'];
+  if (stage >= 1) return ['fish', 'dolphin'];
+  return ['fish'];
 }
 
 router.get('/courses', async (req: UserAuthRequest, res: Response) => {
