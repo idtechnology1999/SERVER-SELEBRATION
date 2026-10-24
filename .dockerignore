@@ -25,3 +25,5 @@ coverage
 # Docker files themselves
 Dockerfile
 .dockerignore
+# User uploads — stored on the server, never baked into the image
+uploads
