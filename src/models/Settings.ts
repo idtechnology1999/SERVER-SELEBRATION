@@ -4,6 +4,8 @@ const settingsSchema = new mongoose.Schema({
   paystackKey: { type: String, default: '' },
   paystackSecret: { type: String, default: '' },
   paystackPlanId: { type: String, default: '' },
+  // Paystack monthly plans used for auto-renewal, one per stage: { shark: { code, amount } }
+  stagePlans: { type: mongoose.Schema.Types.Mixed, default: {} },
   bankName: { type: String, default: '' },
   bankAccount: { type: String, default: '' },
   bankAccountName: { type: String, default: '' },

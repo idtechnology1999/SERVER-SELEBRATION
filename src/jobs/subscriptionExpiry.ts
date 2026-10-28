@@ -3,6 +3,7 @@ import { User } from '../models/User.js';
 import { Notification } from '../models/Notification.js';
 import { sendMail } from '../utils/mailer.js';
 import { emit } from '../socket.js';
+import { graceDays } from '../utils/stages.js';
 
 const FRONTEND_URL = () => process.env.FRONTEND_URL || 'http://localhost:5173';
 
@@ -12,9 +13,17 @@ const WARN_DAYS = [7, 3, 2, 1];
 async function runSubscriptionExpiryReminder() {
   const now = new Date();
 
-  // ── 1. Auto-expire lapsed active subscriptions ────────────────────────────
+  // ── 1. Auto-expire paid months that ended (after the grace period) ─────────
+  const graceCutoff = new Date(now.getTime() - graceDays() * 24 * 60 * 60 * 1000);
   const expired = await User.updateMany(
-    { subscription: 'active', trialEndsAt: { $lt: now } },
+    {
+      subscription: 'active',
+      $or: [
+        { paidUntil: { $lt: graceCutoff } },
+        // Older accounts kept the paid-until date in trialEndsAt
+        { paidUntil: null, trialEndsAt: { $lt: graceCutoff } },
+      ],
+    },
     { subscription: 'expired' }
   );
   if (expired.modifiedCount > 0) {
@@ -27,12 +36,26 @@ async function runSubscriptionExpiryReminder() {
 
   const users = await User.find({
     subscription: 'active',
-    trialEndsAt: { $gte: now, $lte: in7Days },
-  }).select('name email trialEndsAt _id');
+    paidUntil: { $gte: now, $lte: in7Days },
+  }).select('name email paidUntil paystackSubscriptionCode _id');
 
   for (const user of users) {
-    const msLeft = new Date(user.trialEndsAt!).getTime() - now.getTime();
+    const msLeft = new Date(user.paidUntil!).getTime() - now.getTime();
     const daysLeft = Math.round(msLeft / (1000 * 60 * 60 * 24));
+
+    // Auto-renew: Paystack charges the card, so just a heads-up 3 days before.
+    if (user.paystackSubscriptionCode) {
+      if (daysLeft !== 3) continue;
+      await Notification.create({
+        userId: user._id.toString(),
+        userType: 'student',
+        title: 'Your plan renews in 3 days',
+        message: 'Your card will be charged automatically for next month. You can turn this off in Settings.',
+        type: 'system',
+      });
+      emit('notification:new', { userId: user._id.toString() });
+      continue;
+    }
 
     // Only send on the specific warning days
     if (!WARN_DAYS.includes(daysLeft)) continue;
@@ -83,9 +106,9 @@ async function runSubscriptionExpiryReminder() {
           </div>
 
           <div style="text-align:center;">
-            <a href="${frontendUrl}/dashboard/courses"
+            <a href="${frontendUrl}/dashboard/settings"
                style="display:inline-block;background:${urgencyColor};color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 36px;border-radius:8px;">
-              Renew Subscription →
+              Renew My Plan →
             </a>
           </div>
 

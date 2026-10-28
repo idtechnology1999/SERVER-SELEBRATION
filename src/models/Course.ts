@@ -27,18 +27,7 @@ const courseSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 
-export const STAGE_PRICES: Record<string, number> = {
-  fish:    5000,
-  dolphin: 15000,
-  shark:   50000,
-  whale:   150000,
-};
-
-export const STAGE_LABELS: Record<string, string> = {
-  fish:    'Become a Fish',
-  dolphin: 'Become a Dolphin',
-  shark:   'Become a Shark',
-  whale:   'Become a Whale',
-};
+// Stage prices now live in utils/stages.ts (one place for the whole backend).
+export { STAGE_PRICES } from '../utils/stages.js';
 
 export const Course = mongoose.model('Course', courseSchema);

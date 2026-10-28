@@ -12,6 +12,7 @@ import { initSocket } from './socket.js';
 import { startTrialReminderJob } from './jobs/trialReminder.js';
 import { startPayoutReminderJob } from './jobs/payoutReminder.js';
 import { startSubscriptionExpiryJob } from './jobs/subscriptionExpiry.js';
+import { startPendingSignupCleanupJob } from './jobs/pendingSignupCleanup.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -97,6 +98,7 @@ mongoose.connect(MONGO_URI, {
     startTrialReminderJob();
     startPayoutReminderJob();
     startSubscriptionExpiryJob();
+    startPendingSignupCleanupJob();
   })
   
   .catch((err: Error) => {

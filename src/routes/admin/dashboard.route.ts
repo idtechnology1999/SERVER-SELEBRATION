@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Response } from 'express';
 import mongoose from 'mongoose';
 import { User, Withdrawal, Commission } from '../../models/index.js';
+import { UsedReference } from '../../models/UsedReference.js';
 import { requireAuth, type AuthRequest } from '../../middleware/auth.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
 
@@ -9,20 +10,26 @@ const router = Router();
 router.use(requireAuth);
 
 router.get('/stats', asyncHandler(async (_req: AuthRequest, res: Response) => {
-  const PRICE = Number(process.env.SUBSCRIPTION_PRICE || 5000);
-
-  const [users, withdrawals, commissions] = await Promise.all([
+  // Revenue comes from real Paystack payments (each one is recorded once in UsedReference).
+  const [users, withdrawals, commissions, payments] = await Promise.all([
     User.find().sort({ createdAt: -1 }),
     Withdrawal.find().sort({ createdAt: -1 }),
     Commission.find().sort({ createdAt: -1 }),
+    UsedReference.find().sort({ createdAt: -1 }),
   ]);
+  const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const revenueByMonth: Record<string, number> = {};
+  for (const p of payments) {
+    const k = monthKey(new Date((p as any).createdAt));
+    revenueByMonth[k] = (revenueByMonth[k] || 0) + (p.amount || 0);
+  }
 
   const activeCount    = users.filter(u => u.subscription === 'active').length;
   const trialCount     = users.filter(u => u.subscription === 'trial').length;
   const expiredCount   = users.filter(u => u.subscription === 'expired').length;
   const cancelledCount = users.filter(u => u.subscription === 'cancelled').length;
 
-  const monthlyRevenue = activeCount * PRICE;
+  const monthlyRevenue = revenueByMonth[monthKey(new Date())] || 0;
 
   const pendingWithdrawalTotal = withdrawals
     .filter(w => w.status === 'pending')
@@ -44,7 +51,7 @@ router.get('/stats', asyncHandler(async (_req: AuthRequest, res: Response) => {
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       return key === m.key;
     }).length;
-    return { month: m.label, users: count, revenue: count * PRICE };
+    return { month: m.label, users: count, revenue: revenueByMonth[m.key] || 0 };
   });
 
   const commissionsByLevel = [1, 2, 3, 4, 5, 6].map(level => ({
@@ -59,14 +66,15 @@ router.get('/stats', asyncHandler(async (_req: AuthRequest, res: Response) => {
     status: u.subscription,
   }));
 
-  const recentPayments = users
-    .filter(u => u.subscription === 'active')
-    .slice(0, 5)
-    .map(u => ({
-      user: u.name || u.email,
-      amount: PRICE,
-      date: u.joined,
-    }));
+  const usersById = new Map(users.map(u => [u._id.toString(), u]));
+  const recentPayments = payments.slice(0, 5).map(p => {
+    const u = usersById.get(p.userId);
+    return {
+      user: u ? (u.name || u.email) : 'Deleted user',
+      amount: p.amount || 0,
+      date: new Date((p as any).createdAt).toISOString().split('T')[0],
+    };
+  });
 
   const pendingWithdrawals = await Promise.all(
     withdrawals.filter(w => w.status === 'pending').slice(0, 10).map(async w => {

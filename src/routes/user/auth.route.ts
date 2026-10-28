@@ -2,12 +2,18 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
 import { User } from '../../models/User.js';
-import { requireUserAuth, type UserAuthRequest } from '../../middleware/userAuth.js';
+import {
+  requireUserAuth, requireSignupAuth, signUserToken, signSignupToken, type UserAuthRequest,
+} from '../../middleware/userAuth.js';
 import { emit } from '../../socket.js';
 import { sendMail } from '../../utils/mailer.js';
+import { publicUser } from '../../utils/publicUser.js';
+import { sendEmailCode, verifyEmailCode } from '../../utils/emailCode.js';
+import { resolvePendingSignup } from '../../utils/pendingSignup.js';
+import { initStagePayment, FRONTEND_URL as PAYMENT_FRONTEND_URL } from '../../utils/paystack.js';
+import { isPaidUp, isStageKey, stageKeyFromNumber } from '../../utils/stages.js';
 
 // Pending registrations awaiting email OTP verification
 const pendingRegistrations = new Map<string, {
@@ -27,14 +33,24 @@ const otpLimiter = rateLimit({
   standardHeaders: true, legacyHeaders: false,
 });
 
-// Helper: check and expire subscriptions that have passed their trialEndsAt
+// Helper: mark a lapsed trial or paid month as expired
 async function checkAndExpireSubscription(user: any): Promise<void> {
-  if (user.subscription === 'active' || user.subscription === 'cancelled') return;
-  if (user.trialEndsAt && new Date(user.trialEndsAt) < new Date()) {
+  if (user.subscription === 'cancelled' || user.subscription === 'expired') return;
+  const lapsedTrial = user.subscription === 'trial' && user.trialEndsAt && new Date(user.trialEndsAt) < new Date();
+  const lapsedPaid = user.subscription === 'active' && !isPaidUp(user);
+  if (lapsedTrial || lapsedPaid) {
     await User.findByIdAndUpdate(user._id, { subscription: 'expired' });
     user.subscription = 'expired';
   }
 }
+
+const otpLimiterStrict = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 10,
+  message: { success: false, message: 'Too many attempts. Please try again in 15 minutes.' },
+  standardHeaders: true, legacyHeaders: false,
+});
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const router = Router();
 
@@ -161,25 +177,10 @@ router.post('/verify-email', otpLimiter, async (req: Request, res: Response) => 
 
     emit('user:registered', { userId: newUser._id.toString(), name: newUser.name });
 
-    const token = jwt.sign(
-      { id: newUser._id.toString(), email: newUser.email, role: 'student' },
-      process.env.JWT_SECRET as string,
-      { expiresIn: '30d' }
-    );
-
     res.status(201).json({
       success: true,
-      token,
-      data: {
-        id: newUser._id.toString(),
-        name: newUser.name,
-        email: newUser.email,
-        phone: newUser.phone,
-        referralCode: newUser.referralCode,
-        stage: newUser.stage,
-        subscription: newUser.subscription,
-        trialEndsAt: newUser.trialEndsAt?.toISOString(),
-      },
+      token: signUserToken(newUser),
+      data: publicUser(newUser),
     });
   } catch (err: any) {
     console.error('[verify-email error]', err.message);
@@ -213,28 +214,27 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
       return;
     }
 
+    // Bought a plan but hasn't paid or confirmed the email yet: send them to finish sign-up
+    // (payment check / email code) instead of the dashboard.
+    if (user.signupStatus === 'awaiting_payment' || user.emailVerified === false) {
+      res.json({
+        success: true,
+        signup: {
+          token: signSignupToken(user),
+          email: user.email,
+          stage: user.pendingPayment?.stage || stageKeyFromNumber(user.stage ?? 0) || '',
+        },
+      });
+      return;
+    }
+
     // Check and expire trial/subscription if needed
     await checkAndExpireSubscription(user);
 
-    const token = jwt.sign(
-      { id: user._id.toString(), email: user.email, role: 'student' },
-      process.env.JWT_SECRET as string,
-      { expiresIn: '30d' }
-    );
-
     res.json({
       success: true,
-      token,
-      data: {
-        id: user._id.toString(),
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        referralCode: user.referralCode,
-        stage: user.stage,
-        subscription: user.subscription,
-        trialEndsAt: user.trialEndsAt?.toISOString(),
-      },
+      token: signUserToken(user),
+      data: publicUser(user),
     });
   } catch (err: any) {
     console.error('[login error]', err.message);
@@ -253,19 +253,7 @@ router.get('/me', requireUserAuth, async (req: UserAuthRequest, res: Response) =
 
     await checkAndExpireSubscription(user);
 
-    res.json({
-      success: true,
-      data: {
-        id: user._id.toString(),
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        referralCode: user.referralCode,
-        stage: user.stage,
-        subscription: user.subscription,
-        trialEndsAt: user.trialEndsAt?.toISOString(),
-      },
-    });
+    res.json({ success: true, data: publicUser(user) });
   } catch (err: any) {
     console.error('[me error]', err.message);
     res.status(500).json({ success: false, message: 'Server error' });
@@ -362,6 +350,242 @@ router.post('/reset-password', authLimiter, async (req: Request, res: Response) 
     res.json({ success: true, message: 'Password updated successfully. You can now log in.' });
   } catch (err: any) {
     console.error('[reset-password error]', err.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Pay-first sign-up (plan buttons on the website)
+//  1. register-paid: create an unconfirmed account and start the Paystack payment
+//  2. signup/status: after Paystack, check the payment (paid / pending / failed → revoked)
+//  3. signup/verify: enter the emailed code → logged in
+// ════════════════════════════════════════════════════════════════════════════
+
+// POST /user-auth/register-paid
+router.post('/register-paid', authLimiter, async (req: Request, res: Response) => {
+  try {
+    const { name, email, phone, password, referralCode, stage, renewal } = req.body;
+
+    if (!name || !email || !phone || !password) {
+      res.status(400).json({ success: false, message: 'All fields are required' });
+      return;
+    }
+    if (typeof email !== 'string' || !EMAIL_RE.test(email.trim())) {
+      res.status(400).json({ success: false, message: 'Please enter a valid email address' });
+      return;
+    }
+    if (String(password).length < 6) {
+      res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
+      return;
+    }
+    if (!isStageKey(stage)) {
+      res.status(400).json({ success: false, message: 'Please choose a plan' });
+      return;
+    }
+    if (renewal !== 'auto' && renewal !== 'manual') {
+      res.status(400).json({ success: false, message: 'Please choose automatic or manual renewal' });
+      return;
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const existing = await User.findOne({ email: cleanEmail });
+    if (existing) {
+      // An earlier unpaid attempt with this email: settle it first (cancelled ones are revoked).
+      const state = existing.signupStatus === 'awaiting_payment'
+        ? await resolvePendingSignup(existing._id.toString())
+        : 'paid';
+      if (state === 'pending') {
+        res.status(400).json({ success: false, message: 'A payment for this email is still being processed. Please wait a few minutes, then log in.' });
+        return;
+      }
+      if (state === 'paid') {
+        res.status(400).json({ success: false, code: 'EMAIL_EXISTS', message: 'An account with this email already exists. Please log in to continue.' });
+        return;
+      }
+    }
+
+    let referredBy: string | null = null;
+    if (referralCode) {
+      const referrer = await User.findOne({ referralCode });
+      if (referrer) referredBy = referralCode;
+    }
+
+    const newUser = await User.create({
+      name: String(name).trim(),
+      email: cleanEmail,
+      phone: String(phone).trim(),
+      password: await bcrypt.hash(String(password), 10),
+      referralCode: generateReferralCode(),
+      referredBy,
+      subscription: 'expired',      // no free trial: access starts when the payment is confirmed
+      emailVerified: false,
+      signupStatus: 'awaiting_payment',
+    });
+
+    let payment;
+    try {
+      payment = await initStagePayment({
+        email: cleanEmail,
+        userId: newUser._id.toString(),
+        stage,
+        renewal,
+        callbackUrl: `${PAYMENT_FRONTEND_URL()}/signup/complete`,
+        signup: true,
+      });
+    } catch (err: any) {
+      await User.deleteOne({ _id: newUser._id });
+      console.error('[register-paid paystack error]', err.message);
+      res.status(502).json({ success: false, message: 'Could not start the payment. Please try again.' });
+      return;
+    }
+
+    await User.findByIdAndUpdate(newUser._id, {
+      pendingPayment: { reference: payment.reference, stage, renewal },
+    });
+
+    res.status(201).json({
+      success: true,
+      data: {
+        signupToken: signSignupToken(newUser),
+        authorizationUrl: payment.authorizationUrl,
+        reference: payment.reference,
+      },
+    });
+  } catch (err: any) {
+    console.error('[register-paid error]', err.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// GET /user-auth/signup/status — called when the buyer returns from Paystack
+router.get('/signup/status', requireSignupAuth, async (req: UserAuthRequest, res: Response) => {
+  try {
+    const before = await User.findById(req.user!.id).select('pendingPayment stage');
+    if (!before) {
+      res.json({ success: true, data: { state: 'failed' } });
+      return;
+    }
+    const stage = before.pendingPayment?.stage || stageKeyFromNumber(before.stage ?? 0) || '';
+
+    let state;
+    try {
+      state = await resolvePendingSignup(before._id.toString());
+    } catch (err: any) {
+      console.error('[signup status paystack error]', err.message);
+      res.status(502).json({ success: false, message: "We couldn't check your payment right now. Please refresh in a moment." });
+      return;
+    }
+
+    if (state !== 'paid') {
+      res.json({ success: true, data: { state, stage } });
+      return;
+    }
+
+    const user = await User.findById(before._id);
+    if (!user) {
+      res.json({ success: true, data: { state: 'failed', stage } });
+      return;
+    }
+    if (!user.emailVerified) {
+      await sendEmailCode(user._id.toString()).catch((err: any) => console.error('[signup code email error]', err.message));
+    }
+    res.json({
+      success: true,
+      data: { state: 'paid', stage, email: user.email, emailVerified: user.emailVerified !== false },
+    });
+  } catch (err: any) {
+    console.error('[signup status error]', err.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// POST /user-auth/signup/resend-code
+router.post('/signup/resend-code', requireSignupAuth, otpLimiterStrict, async (req: UserAuthRequest, res: Response) => {
+  try {
+    const user = await User.findById(req.user!.id).select('signupStatus emailVerified');
+    if (!user || user.signupStatus !== 'complete' || user.emailVerified) {
+      res.status(400).json({ success: false, message: 'There is no code to send for this account.' });
+      return;
+    }
+    const result = await sendEmailCode(user._id.toString());
+    if (!result.sent) {
+      res.status(429).json({ success: false, retryAfterSeconds: result.retryAfterSeconds, message: `Please wait ${result.retryAfterSeconds}s before requesting another code.` });
+      return;
+    }
+    res.json({ success: true, message: 'A new code has been sent.' });
+  } catch (err: any) {
+    console.error('[resend-code error]', err.message);
+    res.status(500).json({ success: false, message: 'Could not send the code. Please try again.' });
+  }
+});
+
+// POST /user-auth/signup/change-email — fix a mistyped email before confirming it
+router.post('/signup/change-email', requireSignupAuth, otpLimiterStrict, async (req: UserAuthRequest, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (typeof email !== 'string' || !EMAIL_RE.test(email.trim())) {
+      res.status(400).json({ success: false, message: 'Please enter a valid email address' });
+      return;
+    }
+    const cleanEmail = email.toLowerCase().trim();
+
+    const user = await User.findById(req.user!.id);
+    if (!user || user.emailVerified) {
+      res.status(400).json({ success: false, message: 'This email can no longer be changed here.' });
+      return;
+    }
+    if (cleanEmail !== user.email && await User.exists({ email: cleanEmail })) {
+      res.status(400).json({ success: false, message: 'That email is already used by another account.' });
+      return;
+    }
+
+    user.email = cleanEmail;
+    await user.save();
+
+    if (user.signupStatus === 'complete') {
+      await sendEmailCode(user._id.toString(), { force: true });
+    }
+
+    res.json({
+      success: true,
+      data: { email: cleanEmail, signupToken: signSignupToken(user) },
+    });
+  } catch (err: any) {
+    console.error('[change-email error]', err.message);
+    res.status(500).json({ success: false, message: 'Could not update the email. Please try again.' });
+  }
+});
+
+// POST /user-auth/signup/verify — correct code → logged in
+router.post('/signup/verify', requireSignupAuth, otpLimiterStrict, async (req: UserAuthRequest, res: Response) => {
+  try {
+    const { code } = req.body;
+    if (!code) {
+      res.status(400).json({ success: false, message: 'Please enter the 6-digit code' });
+      return;
+    }
+    const user = await User.findById(req.user!.id).select('signupStatus');
+    if (!user || user.signupStatus !== 'complete') {
+      res.status(400).json({ success: false, message: 'Your payment has not been confirmed yet.' });
+      return;
+    }
+
+    const result = await verifyEmailCode(user._id.toString(), String(code));
+    if (!result.ok) {
+      res.status(400).json({ success: false, message: result.message });
+      return;
+    }
+
+    const fresh = await User.findById(user._id).select('-password');
+    if (!fresh) {
+      res.status(404).json({ success: false, message: 'Account not found' });
+      return;
+    }
+    emit('user:registered', { userId: fresh._id.toString(), name: fresh.name });
+
+    res.json({ success: true, token: signUserToken(fresh), data: publicUser(fresh) });
+  } catch (err: any) {
+    console.error('[signup verify error]', err.message);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });

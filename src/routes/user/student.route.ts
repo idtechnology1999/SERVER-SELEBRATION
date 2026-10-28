@@ -10,6 +10,7 @@ import { ModuleUnlock } from '../../models/ModuleUnlock.js';
 import { Notification } from '../../models/Notification.js';
 import { Admin } from '../../models/Admin.js';
 import { emit } from '../../socket.js';
+import { accessibleStages, paidUntilOf } from '../../utils/stages.js';
 
 const router = Router();
 router.use(requireUserAuth);
@@ -41,7 +42,8 @@ router.get('/dashboard', async (req: UserAuthRequest, res: Response) => {
         referralCount: user.referrals,
         stage: user.stage,
         subscription: user.subscription,
-        trialEndsAt: user.trialEndsAt,
+        trialEndsAt: user.subscription === 'trial' ? user.trialEndsAt : undefined,
+        paidUntil: paidUntilOf(user),
         coursesCount: courses.length,
         pendingWithdrawals: withdrawals.filter(w => w.status === 'pending').length,
         courses: courses.slice(0, 3).map(c => ({
@@ -251,38 +253,14 @@ router.get('/referrals', async (req: UserAuthRequest, res: Response) => {
   }
 });
 
-// Which stages a user can access based on their stage number
-function accessibleStages(stage: number, subscription: string, trialEndsAt?: Date): string[] {
-  const now = new Date();
-  const trialActive = subscription === 'trial' && trialEndsAt && trialEndsAt > now;
-  if (trialActive) return ['fish'];
-  if (subscription !== 'active') return [];
-  if (stage >= 3) return ['fish', 'dolphin', 'shark', 'whale'];
-  if (stage >= 2) return ['fish', 'dolphin', 'shark'];
-  if (stage >= 1) return ['fish', 'dolphin'];
-  return ['fish'];
-}
-
 router.get('/courses', async (req: UserAuthRequest, res: Response) => {
   try {
-    const user = await User.findById(req.user!.id).select('subscription trialEndsAt stage');
+    const user = await User.findById(req.user!.id).select('subscription trialEndsAt stage paidUntil');
     if (!user) { res.status(404).json({ success: false, message: 'User not found' }); return; }
 
-    const now = new Date();
-    const trialActive = user.subscription === 'trial' && user.trialEndsAt && new Date(user.trialEndsAt) > now;
-    const hasAccess = user.subscription === 'active' || trialActive;
-
-    if (!hasAccess) {
-      res.status(403).json({
-        success: false,
-        message: user.subscription === 'trial'
-          ? 'Your free trial has expired. Please subscribe to continue.'
-          : 'Please subscribe to access courses.',
-      });
-      return;
-    }
-
-    const unlocked = accessibleStages(user.stage ?? 0, user.subscription, user.trialEndsAt ? new Date(user.trialEndsAt) : undefined);
+    // Everyone sees the course list; stages they haven't paid for come back locked
+    // (titles only), so the page can offer upgrade/renew buttons.
+    const unlocked: string[] = accessibleStages(user);
     const courses = await Course.find({ status: 'active' }).sort({ createdAt: -1 });
 
     res.json({

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Response } from 'express';
 import mongoose from 'mongoose';
 import { User, Commission } from '../../models/index.js';
+import { UsedReference } from '../../models/UsedReference.js';
 import { requireAuth, type AuthRequest } from '../../middleware/auth.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
 
@@ -9,17 +10,23 @@ const router = Router();
 router.use(requireAuth);
 
 router.get('/', asyncHandler(async (_req: AuthRequest, res: Response) => {
-  const PRICE = Number(process.env.SUBSCRIPTION_PRICE || 5000);
-
-  const [users, commissions] = await Promise.all([
+  // Revenue comes from real Paystack payments (each one is recorded once in UsedReference).
+  const [users, commissions, payments] = await Promise.all([
     User.find().sort({ createdAt: -1 }),
     Commission.find().sort({ createdAt: -1 }),
+    UsedReference.find(),
   ]);
+  const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const revenueByMonth: Record<string, number> = {};
+  for (const p of payments) {
+    const k = monthKey(new Date((p as any).createdAt));
+    revenueByMonth[k] = (revenueByMonth[k] || 0) + (p.amount || 0);
+  }
 
   const totalUsers = users.length;
   const activeUsers = users.filter(u => u.subscription === 'active').length;
   const trialUsers = users.filter(u => u.subscription === 'trial').length;
-  const totalRevenue = activeUsers * PRICE;
+  const totalRevenue = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
   const conversionRate = totalUsers > 0 ? ((activeUsers / totalUsers) * 100).toFixed(1) : '0.0';
   const avgRevenuePerUser = totalUsers > 0 ? Math.round(totalRevenue / totalUsers) : 0;
 
@@ -41,7 +48,7 @@ router.get('/', asyncHandler(async (_req: AuthRequest, res: Response) => {
     const conversions = monthUsers.filter(u => u.subscription === 'active').length;
     return {
       month: m.label,
-      revenue: monthUsers.filter(u => u.subscription === 'active').length * PRICE,
+      revenue: revenueByMonth[m.key] || 0,
       users: monthUsers.length,
       conversions,
     };

@@ -8,7 +8,7 @@ const router = Router();
 router.use(requireAuth);
 
 // Target options:
-//  all | trial | active | expired | cancelled | stage-0 | stage-1 | stage-2 | stage-3
+//  all | trial | active | expired | cancelled | stage-0 (never paid) | stage-1 Fish | stage-2 Dolphin | stage-3 Shark | stage-4 Whale
 function buildQuery(target: string): Record<string, any> {
   switch (target) {
     case 'all':       return {};
@@ -20,6 +20,7 @@ function buildQuery(target: string): Record<string, any> {
     case 'stage-1':   return { stage: 1 };
     case 'stage-2':   return { stage: 2 };
     case 'stage-3':   return { stage: 3 };
+    case 'stage-4':   return { stage: 4 };
     default:          return {};
   }
 }

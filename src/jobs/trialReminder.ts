@@ -94,6 +94,7 @@ async function runTrialReminder() {
   // Day 1 grace: expired between 1–2 days ago
   const grace1Users = await User.find({
     subscription: 'expired',
+    paidUntil: null, // trial-ended reminders only for people who never paid
     stage: 0,
     trialEndsAt: { $gte: day2After, $lt: day1After },
   }).select('name email');
@@ -135,6 +136,7 @@ async function runTrialReminder() {
   // Day 2 grace: expired between 2–3 days ago — final warning
   const grace2Users = await User.find({
     subscription: 'expired',
+    paidUntil: null, // trial-ended reminders only for people who never paid
     stage: 0,
     trialEndsAt: { $gte: day3After, $lt: day2After },
   }).select('name email');
@@ -176,6 +178,7 @@ async function runTrialReminder() {
   // ── 4. Delete accounts expired > 3 days ago with no payment ──────────────
   const deleted = await User.deleteMany({
     subscription: 'expired',
+    paidUntil: null, // never paid
     stage: 0,
     trialEndsAt: { $lt: day3After },
   });
