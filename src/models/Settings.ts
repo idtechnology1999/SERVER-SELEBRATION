@@ -4,6 +4,9 @@ const settingsSchema = new mongoose.Schema({
   paystackKey: { type: String, default: '' },
   paystackSecret: { type: String, default: '' },
   paystackPlanId: { type: String, default: '' },
+  // Monthly stage prices in Naira, set from the admin panel: { fish: 5000, ... }.
+  // Missing stages fall back to the defaults in utils/stages.ts.
+  stagePrices: { type: mongoose.Schema.Types.Mixed, default: {} },
   // Paystack monthly plans used for auto-renewal, one per stage: { shark: { code, amount } }
   stagePlans: { type: mongoose.Schema.Types.Mixed, default: {} },
   bankName: { type: String, default: '' },

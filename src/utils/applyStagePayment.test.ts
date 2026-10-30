@@ -18,6 +18,10 @@ vi.mock("./paystack.js", () => ({
   stageForPlanCode: vi.fn(),
 }));
 vi.mock("../socket.js", () => ({ emit: vi.fn() }));
+// Admin-panel prices (here: Shark raised to ₦60,000 after some checkouts started).
+vi.mock("./prices.js", () => ({
+  getStagePrices: vi.fn().mockResolvedValue({ fish: 5000, dolphin: 15000, shark: 60000, whale: 150000 }),
+}));
 
 import { applyStagePayment } from "./applyStagePayment.js";
 import { User } from "../models/User.js";
@@ -33,7 +37,7 @@ const tx = (over: Record<string, any> = {}) => ({
   currency: "NGN",
   reference: "ref-1",
   amount: 50000 * 100,
-  metadata: { type: "stage", stage: "shark", userId: "u1", renewal: "manual" },
+  metadata: { type: "stage", stage: "shark", userId: "u1", renewal: "manual", price: 50000 },
   customer: { email: "a@b.com" },
   ...over,
 });
@@ -148,6 +152,22 @@ describe("applyStagePayment", () => {
     const days = (new Date(update.paidUntil).getTime() - Date.now()) / DAY;
     expect(days).toBeGreaterThan(27);
     expect(days).toBeLessThan(32);
+  });
+
+  it("accepts the price quoted at checkout even if the admin raised it since", async () => {
+    mockUser(user());
+
+    const result = await applyStagePayment(tx()); // quoted ₦50,000, current price ₦60,000
+
+    expect(result).toMatchObject({ status: "applied" });
+  });
+
+  it("without a quoted price, checks against the current admin price", async () => {
+    mockUser(user());
+
+    const result = await applyStagePayment(tx({ metadata: { type: "stage", stage: "shark", userId: "u1" } }));
+
+    expect(result).toMatchObject({ status: "ignored", reason: "amount_too_low" });
   });
 
   it("ignores a payment below the stage price", async () => {

@@ -3,10 +3,12 @@ import type { Request, Response } from 'express';
 import { Settings } from '../../models/index.js';
 import { requireAuth, type AuthRequest } from '../../middleware/auth.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
+import { getStagePrices, parseStagePrices } from '../../utils/prices.js';
+import { syncStagePlanPrices } from '../../utils/paystack.js';
 
 const router = Router();
 
-// Public endpoint — returns only commission rates and subscription price
+// Public endpoint — commission rates, stage prices and trial length (shown on the website)
 router.get('/public', asyncHandler(async (_req: Request, res: Response) => {
   const settings = await Settings.findOne().select(
     'commissionLevel1 commissionLevel2 commissionLevel3 commissionLevel4 commissionLevel5 commissionLevel6 subscriptionPrice trialDays'
@@ -24,6 +26,7 @@ router.get('/public', asyncHandler(async (_req: Request, res: Response) => {
         s.commissionLevel6 ?? 1,
       ],
       subscriptionPrice: s.subscriptionPrice ?? 5000,
+      stagePrices: await getStagePrices(),
       trialDays: s.trialDays ?? 7,
     },
   });
@@ -35,19 +38,39 @@ router.use(requireAuth);
 router.get('/', asyncHandler(async (_req: AuthRequest, res: Response) => {
   let settings = await Settings.findOne();
   if (!settings) { settings = new Settings({}); await settings.save(); }
-  res.json({ success: true, data: settings });
+  // Always send all four prices (defaults filled in) so the admin form shows them.
+  res.json({ success: true, data: { ...settings.toObject(), stagePrices: await getStagePrices() } });
 }));
 
 router.put('/', asyncHandler(async (req: AuthRequest, res: Response) => {
-  let settings = await Settings.findOne();
-  if (settings) {
-    Object.assign(settings, req.body);
-    await settings.save();
-  } else {
-    settings = new Settings(req.body);
-    await settings.save();
+  // Paystack plan codes are managed by the server, never by the form.
+  const { stagePlans: _ignored, stagePrices: rawPrices, ...rest } = req.body || {};
+
+  let newPrices;
+  if (rawPrices !== undefined) {
+    const parsed = parseStagePrices(rawPrices);
+    if (!parsed.ok) { res.status(400).json({ success: false, message: parsed.message }); return; }
+    newPrices = parsed.prices;
   }
-  res.json({ success: true, data: settings });
+
+  let settings = await Settings.findOne();
+  if (!settings) settings = new Settings({});
+  const before = await getStagePrices();
+
+  Object.assign(settings, rest);
+  if (newPrices) {
+    settings.set('stagePrices', { ...(settings.get('stagePrices') || {}), ...newPrices });
+    settings.markModified('stagePrices');
+  }
+  await settings.save();
+
+  // Price changed: update auto-renew plans so renewals charge the new price.
+  const after = await getStagePrices();
+  if (JSON.stringify(before) !== JSON.stringify(after)) {
+    syncStagePlanPrices().catch(err => console.error('[settings] plan price sync failed:', err.message));
+  }
+
+  res.json({ success: true, data: { ...settings.toObject(), stagePrices: after } });
 }));
 
 export default router;

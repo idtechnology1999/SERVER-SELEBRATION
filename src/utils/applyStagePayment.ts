@@ -4,8 +4,9 @@ import { Notification } from '../models/Notification.js';
 import { Admin } from '../models/Admin.js';
 import { distributeCommissions } from './distributeCommissions.js';
 import { disableSubscription, stageForPlanCode } from './paystack.js';
+import { getStagePrices } from './prices.js';
 import {
-  STAGE_LABELS, STAGE_NUMBERS, STAGE_PRICES, addOneMonth, isPaidUp, isStageKey, isTrialActive, type StageKey,
+  STAGE_LABELS, STAGE_NUMBERS, addOneMonth, isPaidUp, isStageKey, isTrialActive, type StageKey,
 } from './stages.js';
 import { emit } from '../socket.js';
 
@@ -71,8 +72,14 @@ export async function applyStagePayment(tx: any): Promise<ApplyResult> {
 
   if (!stage) return { status: 'ignored', reason: 'unknown_stage' };
 
+  // Prices can change in the admin panel, so check against the price quoted at checkout.
+  // Auto-renew charges come from our own Paystack plan, which sets the amount itself.
   const amountNaira = Math.round(Number(tx.amount) / 100);
-  if (!Number.isFinite(amountNaira) || amountNaira < STAGE_PRICES[stage]) {
+  const quoted = Number(meta.price);
+  const expected = meta.type === 'stage'
+    ? (Number.isFinite(quoted) && quoted > 0 ? quoted : (await getStagePrices())[stage])
+    : 1;
+  if (!Number.isFinite(amountNaira) || amountNaira < expected) {
     return { status: 'ignored', reason: 'amount_too_low' };
   }
 

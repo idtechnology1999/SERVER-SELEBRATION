@@ -1,5 +1,6 @@
 import { Settings } from '../models/Settings.js';
-import { STAGE_LABELS, STAGE_PRICES, type StageKey } from './stages.js';
+import { STAGE_KEYS, STAGE_LABELS, type StageKey } from './stages.js';
+import { getStagePrices } from './prices.js';
 
 export const FRONTEND_URL = () => process.env.FRONTEND_URL || 'http://localhost:5173';
 
@@ -13,6 +14,16 @@ export async function paystackPost(path: string, body: object) {
   const secret = await getPaystackSecret();
   const res = await fetch(`https://api.paystack.co${path}`, {
     method: 'POST',
+    headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return res.json() as Promise<any>;
+}
+
+export async function paystackPut(path: string, body: object) {
+  const secret = await getPaystackSecret();
+  const res = await fetch(`https://api.paystack.co${path}`, {
+    method: 'PUT',
     headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
@@ -34,15 +45,31 @@ export async function verifyTransaction(reference: string) {
 // Paystack transaction statuses that will never turn into a successful payment.
 export const FINAL_FAILED_STATUSES = new Set(['failed', 'abandoned', 'reversed']);
 
-// Monthly Paystack plan for a stage (created once, recreated if the price changes).
-export async function ensureStagePlan(stage: StageKey): Promise<string> {
-  const amount = STAGE_PRICES[stage] * 100;
+// Monthly Paystack plan for a stage, kept at the current price.
+// When the price changes, the existing plan is updated (including people already on
+// auto-renew, from their next charge); if that fails a new plan is created.
+export async function ensureStagePlan(stage: StageKey, priceNaira?: number): Promise<string> {
+  const amount = (priceNaira ?? (await getStagePrices())[stage]) * 100;
   let settings = await Settings.findOne();
   if (!settings) settings = await Settings.create({});
 
   const plans = (settings.get('stagePlans') || {}) as Record<string, { code: string; amount: number }>;
   const existing = plans[stage];
   if (existing?.code && existing.amount === amount) return existing.code;
+
+  if (existing?.code) {
+    const updated = await paystackPut(`/plan/${encodeURIComponent(existing.code)}`, {
+      amount,
+      update_existing_subscriptions: true,
+    });
+    if (updated.status) {
+      plans[stage] = { code: existing.code, amount };
+      settings.set('stagePlans', plans);
+      settings.markModified('stagePlans');
+      await settings.save();
+      return existing.code;
+    }
+  }
 
   const data = await paystackPost('/plan', {
     name: `${STAGE_LABELS[stage]} — monthly`,
@@ -59,6 +86,21 @@ export async function ensureStagePlan(stage: StageKey): Promise<string> {
   settings.markModified('stagePlans');
   await settings.save();
   return data.data.plan_code;
+}
+
+// After an admin changes prices: bring every existing auto-renew plan up to date.
+export async function syncStagePlanPrices(): Promise<void> {
+  const settings = await Settings.findOne().select('stagePlans');
+  const plans = (settings?.get('stagePlans') || {}) as Record<string, { code: string }>;
+  const prices = await getStagePrices();
+  for (const stage of STAGE_KEYS) {
+    if (!plans[stage]?.code) continue; // no plan yet: it's created at the right price when first needed
+    try {
+      await ensureStagePlan(stage, prices[stage]);
+    } catch (err: any) {
+      console.error(`[syncStagePlanPrices] ${stage}:`, err.message);
+    }
+  }
 }
 
 // Which stage a Paystack plan code belongs to (for renewal charges).
@@ -82,9 +124,10 @@ interface InitStagePaymentArgs {
 // Starts a Paystack checkout for one month of a stage.
 // Auto-renew uses a Paystack plan, which only works with cards.
 export async function initStagePayment({ email, userId, stage, renewal, callbackUrl, signup }: InitStagePaymentArgs) {
+  const price = (await getStagePrices())[stage];
   const body: Record<string, unknown> = {
     email,
-    amount: STAGE_PRICES[stage] * 100,
+    amount: price * 100,
     currency: 'NGN',
     callback_url: callbackUrl,
     metadata: {
@@ -92,6 +135,7 @@ export async function initStagePayment({ email, userId, stage, renewal, callback
       type: 'stage',
       stage,
       renewal,
+      price,            // the price at checkout time, checked again when the payment is applied
       signup: !!signup,
       // Paystack sends the buyer here if they cancel on the checkout page.
       cancel_action: `${callbackUrl}${callbackUrl.includes('?') ? '&' : '?'}cancelled=1`,
@@ -99,7 +143,7 @@ export async function initStagePayment({ email, userId, stage, renewal, callback
     },
   };
   if (renewal === 'auto') {
-    body.plan = await ensureStagePlan(stage);
+    body.plan = await ensureStagePlan(stage, price);
     body.channels = ['card'];
   }
 
@@ -108,7 +152,7 @@ export async function initStagePayment({ email, userId, stage, renewal, callback
   return {
     authorizationUrl: data.data.authorization_url as string,
     reference: data.data.reference as string,
-    amount: STAGE_PRICES[stage],
+    amount: price,
   };
 }
 

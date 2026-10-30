@@ -6,7 +6,8 @@ export type StageKey = typeof STAGE_KEYS[number];
 // Stage number stored on the user: 0 = never paid, 1 = Fish ... 4 = Whale.
 export const STAGE_NUMBERS: Record<StageKey, number> = { fish: 1, dolphin: 2, shark: 3, whale: 4 };
 
-// Monthly price in Naira.
+// Default monthly price in Naira. The live prices are set in the admin panel
+// (see utils/prices.ts); these are used until an admin saves different ones.
 export const STAGE_PRICES: Record<StageKey, number> = {
   fish: 5000,
   dolphin: 15000,
