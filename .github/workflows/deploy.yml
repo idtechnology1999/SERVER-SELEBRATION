@@ -2,6 +2,7 @@ name: Backend CI/CD
 on:
   push:
     branches: [main, production]
+  workflow_dispatch:
   pull_request:
     branches: [main, production]
 jobs:
@@ -15,5 +16,28 @@ jobs:
       - run: npm ci
       - run: npm test
 
-  # Image publishing removed: images are built and pushed by hand to
-  # ghcr.io/kingselo/selebration-server (this repo can't publish there).
+  build:
+    # Runs only in the kingselo copy of this repo (which may publish to ghcr.io/kingselo),
+    # only for production, and only after the tests pass.
+    needs: test
+    if: github.repository_owner == 'kingselo' && github.ref == 'refs/heads/production'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/kingselo/selebration-server:latest
+            ghcr.io/kingselo/selebration-server:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
