@@ -5,7 +5,7 @@ import { Admin } from '../models/Admin.js';
 import { distributeCommissions } from './distributeCommissions.js';
 import { disableSubscription, stageForPlanCode } from './paystack.js';
 import {
-  STAGE_LABELS, STAGE_NUMBERS, STAGE_PRICES, addOneMonth, isPaidUp, isStageKey, type StageKey,
+  STAGE_LABELS, STAGE_NUMBERS, STAGE_PRICES, addOneMonth, isPaidUp, isStageKey, isTrialActive, type StageKey,
 } from './stages.js';
 import { emit } from '../socket.js';
 
@@ -116,8 +116,13 @@ export async function applyStagePayment(tx: any): Promise<ApplyResult> {
         'Lower-stage payment received',
         `${user.email} paid ₦${amountNaira.toLocaleString()} for ${STAGE_LABELS[stage]} while on a higher stage (ref ${tx.reference}). Please check and refund if needed.`,
       );
+    } else if (stage === 'fish' && isTrialActive(user, now)) {
+      // Paying for Fish during the free trial: keep the remaining trial days,
+      // the paid month starts when the trial ends.
+      nextPaidUntil = addOneMonth(new Date(user.trialEndsAt!));
     } else {
       // New stage, upgrade, or paying again after the month ran out: a fresh month from today.
+      // (A higher stage bought during the trial unlocks straight away.)
       nextPaidUntil = addOneMonth(now);
     }
 

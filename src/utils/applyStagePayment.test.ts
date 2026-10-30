@@ -125,6 +125,31 @@ describe("applyStagePayment", () => {
     expect(update.paystackSubscriptionCode).toBe("");
   });
 
+  it("paying for Fish during the free trial starts the paid month when the trial ends", async () => {
+    const trialEnd = new Date(Date.now() + 4 * DAY);
+    mockUser(user({ subscription: "trial", trialEndsAt: trialEnd }));
+
+    await applyStagePayment(tx({ amount: 5000 * 100, metadata: { type: "stage", stage: "fish", userId: "u1" } }));
+
+    const update = lastUpdate();
+    const expected = new Date(trialEnd);
+    expected.setMonth(expected.getMonth() + 1);
+    expect(update.stage).toBe(1);
+    expect(new Date(update.paidUntil).getTime()).toBe(expected.getTime());
+  });
+
+  it("buying a higher stage during the free trial unlocks it straight away", async () => {
+    mockUser(user({ subscription: "trial", trialEndsAt: new Date(Date.now() + 4 * DAY) }));
+
+    await applyStagePayment(tx());
+
+    const update = lastUpdate();
+    expect(update.stage).toBe(3);
+    const days = (new Date(update.paidUntil).getTime() - Date.now()) / DAY;
+    expect(days).toBeGreaterThan(27);
+    expect(days).toBeLessThan(32);
+  });
+
   it("ignores a payment below the stage price", async () => {
     mockUser(user());
 
