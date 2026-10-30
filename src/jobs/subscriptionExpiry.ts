@@ -85,7 +85,7 @@ async function runSubscriptionExpiryReminder() {
     await sendMail(user.email, title, `
       <div style="font-family:sans-serif;max-width:560px;margin:auto;background:#f9f9f9;border-radius:12px;overflow:hidden;">
         <div style="background:linear-gradient(135deg,#08192E,#0D2847);padding:28px 32px;">
-          <p style="color:rgba(255,255,255,0.6);margin:0;font-size:14px;letter-spacing:2px;text-transform:uppercase;">Selebration</p>
+          <p style="color:rgba(255,255,255,0.6);margin:0;font-size:14px;letter-spacing:2px;text-transform:uppercase;">Selliberation</p>
         </div>
         <div style="padding:32px;">
           <p style="font-size:16px;color:#111;">Hi <strong>${user.name}</strong>,</p>
@@ -113,7 +113,7 @@ async function runSubscriptionExpiryReminder() {
           </div>
 
           <p style="font-size:12px;color:#aaa;margin-top:28px;text-align:center;">
-            You're receiving this because your Selebration subscription is expiring soon.
+            You're receiving this because your Selliberation subscription is expiring soon.
           </p>
         </div>
       </div>

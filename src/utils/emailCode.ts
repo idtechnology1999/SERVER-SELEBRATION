@@ -24,7 +24,7 @@ export async function sendEmailCode(userId: string, { force = false } = {}): Pro
     emailOtp: { hash: hashCode(code), expiresAt: new Date(Date.now() + CODE_TTL_MS), attempts: 0, lastSentAt: new Date() },
   });
 
-  await sendMail(user.email, 'Confirm your Selebration email', `
+  await sendMail(user.email, 'Confirm your Selliberation email', `
     <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;background:#f9f9f9;border-radius:12px;">
       <h2 style="color:#0D2847;">Confirm your email</h2>
       <p>Hi <strong>${user.name}</strong>, thanks for your payment. Use this code to confirm your email and open your account:</p>

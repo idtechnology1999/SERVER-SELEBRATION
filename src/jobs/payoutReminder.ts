@@ -38,7 +38,7 @@ export async function runWeeklyPayout(now = new Date()) {
     await sendMail(user.email, '💰 Your weekly earnings are ready to withdraw', `
       <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:0;background:#f9f9f9;border-radius:12px;overflow:hidden;">
         <div style="background:linear-gradient(135deg,#08192E,#0D2847);padding:32px;text-align:center;">
-          <p style="color:rgba(255,255,255,0.5);margin:8px 0 0;font-size:13px;">Selebration</p>
+          <p style="color:rgba(255,255,255,0.5);margin:8px 0 0;font-size:13px;">Selliberation</p>
         </div>
         <div style="padding:32px;">
           <p style="font-size:16px;color:#111;">Hi <strong>${user.name}</strong>,</p>
@@ -63,7 +63,7 @@ export async function runWeeklyPayout(now = new Date()) {
             Make sure your bank account details are saved before you request a withdrawal.
           </p>
           <p style="font-size:12px;color:#aaa;margin-top:16px;text-align:center;">
-            You're receiving this because you have earnings on Selebration.
+            You're receiving this because you have earnings on Selliberation.
           </p>
         </div>
       </div>

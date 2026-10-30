@@ -88,9 +88,9 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
     });
 
     try {
-      await sendMail(email, 'Verify your Selebration email', `
+      await sendMail(email, 'Verify your Selliberation email', `
         <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;background:#f9f9f9;border-radius:12px;">
-          <h2 style="color:#0D2847;">Welcome to Selebration!</h2>
+          <h2 style="color:#0D2847;">Welcome to Selliberation!</h2>
           <p>Hi <strong>${name}</strong>, use this code to verify your email and complete registration:</p>
           <div style="text-align:center;margin:24px 0;padding:20px;background:#fff;border:2px solid #F5820A;border-radius:10px;">
             <p style="margin:0;font-size:36px;font-weight:900;color:#F5820A;letter-spacing:8px;">${otp}</p>
@@ -294,10 +294,10 @@ router.post('/forgot-password', authLimiter, async (req: Request, res: Response)
 
     const resetLink = `${FRONTEND_URL()}/reset-password?token=${token}`;
 
-    await sendMail(user.email, 'Reset your Selebration password', `
+    await sendMail(user.email, 'Reset your Selliberation password', `
       <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;background:#f9f9f9;border-radius:12px;">
         <h2 style="color:#0D2847;">Reset your password</h2>
-        <p>Hi <strong>${user.name}</strong>, we received a request to reset your Selebration password.</p>
+        <p>Hi <strong>${user.name}</strong>, we received a request to reset your Selliberation password.</p>
         <p>Click the button below to choose a new password. This link expires in <strong>1 hour</strong>.</p>
         <div style="text-align:center;margin:32px 0;">
           <a href="${resetLink}"

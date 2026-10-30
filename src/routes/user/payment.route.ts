@@ -369,7 +369,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
           title: 'Card payment failed', message,
         });
         emit('notification:new', { userId: user._id.toString() });
-        await sendMail(user.email, 'We could not renew your Selebration plan', `
+        await sendMail(user.email, 'We could not renew your Selliberation plan', `
           <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;background:#f9f9f9;border-radius:12px;">
             <h2 style="color:#0D2847;">Card payment failed</h2>
             <p>Hi <strong>${user.name}</strong>, ${message}</p>

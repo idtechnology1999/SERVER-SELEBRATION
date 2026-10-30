@@ -38,7 +38,7 @@ async function runTrialReminder() {
     await sendMail(user.email, subject, `
       <div style="font-family:sans-serif;max-width:560px;margin:auto;padding:0;background:#f9f9f9;border-radius:12px;overflow:hidden;">
         <div style="background:linear-gradient(135deg,#08192E,#0D2847);padding:32px;text-align:center;">
-          <p style="color:rgba(255,255,255,0.6);margin:0;font-size:14px;letter-spacing:2px;text-transform:uppercase;">Selebration</p>
+          <p style="color:rgba(255,255,255,0.6);margin:0;font-size:14px;letter-spacing:2px;text-transform:uppercase;">Selliberation</p>
         </div>
         <div style="padding:32px;">
           <p style="font-size:16px;color:#111;">Hi <strong>${user.name}</strong>,</p>
@@ -76,7 +76,7 @@ async function runTrialReminder() {
             </a>
           </div>
           <p style="font-size:12px;color:#aaa;margin-top:24px;text-align:center;">
-            You're receiving this because you have an active free trial on Selebration.
+            You're receiving this because you have an active free trial on Selliberation.
           </p>
         </div>
       </div>
@@ -101,14 +101,14 @@ async function runTrialReminder() {
 
   for (const user of grace1Users) {
     const frontendUrl = FRONTEND_URL();
-    await sendMail(user.email, '⚠️ Your Selebration trial has ended — upgrade to keep your account', `
+    await sendMail(user.email, '⚠️ Your Selliberation trial has ended — upgrade to keep your account', `
       <div style="font-family:sans-serif;max-width:560px;margin:auto;background:#f9f9f9;border-radius:12px;overflow:hidden;">
         <div style="background:#EF4444;padding:24px 32px;text-align:center;">
           <p style="color:#fff;margin:0;font-size:18px;font-weight:700;">Free Trial Ended</p>
         </div>
         <div style="padding:32px;">
           <p style="font-size:16px;color:#111;">Hi <strong>${user.name}</strong>,</p>
-          <p style="color:#333;font-size:15px;">Your 7-day free trial has ended. <strong>You have 1 day left</strong> to upgrade before your account is permanently removed from Selebration.</p>
+          <p style="color:#333;font-size:15px;">Your 7-day free trial has ended. <strong>You have 1 day left</strong> to upgrade before your account is permanently removed from Selliberation.</p>
 
           <div style="text-align:center;margin:24px 0;padding:20px;background:#fff;border:2px solid #EF4444;border-radius:10px;">
             <p style="margin:0;font-size:13px;color:#888;text-transform:uppercase;letter-spacing:1px;">Days Until Account Removal</p>
@@ -143,21 +143,21 @@ async function runTrialReminder() {
 
   for (const user of grace2Users) {
     const frontendUrl = FRONTEND_URL();
-    await sendMail(user.email, '🚨 FINAL WARNING: Your Selebration account will be deleted in 24 hours', `
+    await sendMail(user.email, '🚨 FINAL WARNING: Your Selliberation account will be deleted in 24 hours', `
       <div style="font-family:sans-serif;max-width:560px;margin:auto;background:#f9f9f9;border-radius:12px;overflow:hidden;">
         <div style="background:#7F1D1D;padding:24px 32px;text-align:center;">
           <p style="color:#fff;margin:0;font-size:18px;font-weight:700;">🚨 Final Warning</p>
         </div>
         <div style="padding:32px;">
           <p style="font-size:16px;color:#111;">Hi <strong>${user.name}</strong>,</p>
-          <p style="color:#333;font-size:15px;"><strong>This is your last chance.</strong> Your Selebration account will be <strong style="color:#EF4444;">permanently deleted within 24 hours</strong> unless you upgrade to a paid course level.</p>
+          <p style="color:#333;font-size:15px;"><strong>This is your last chance.</strong> Your Selliberation account will be <strong style="color:#EF4444;">permanently deleted within 24 hours</strong> unless you upgrade to a paid course level.</p>
 
           <div style="text-align:center;margin:24px 0;padding:20px;background:#fff;border:2px solid #7F1D1D;border-radius:10px;">
             <p style="margin:0;font-size:13px;color:#888;text-transform:uppercase;letter-spacing:1px;">Account Deleted In</p>
             <p style="margin:4px 0 0;font-size:56px;font-weight:900;color:#7F1D1D;line-height:1;">24h</p>
           </div>
 
-          <p style="color:#555;font-size:14px;">If you want to rejoin Selebration after your account is removed, you will need to register with a different email address.</p>
+          <p style="color:#555;font-size:14px;">If you want to rejoin Selliberation after your account is removed, you will need to register with a different email address.</p>
 
           <div style="text-align:center;margin-top:24px;">
             <a href="${frontendUrl}/dashboard/courses"

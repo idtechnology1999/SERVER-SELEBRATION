@@ -16,7 +16,7 @@ export function makeTransporter() {
 export async function sendMail(to: string, subject: string, html: string): Promise<void> {
   const transporter = makeTransporter();
   await transporter.sendMail({
-    from: `"Selebration" <${process.env.EMAIL_USER}>`,
+    from: `"Selliberation" <${process.env.EMAIL_USER}>`,
     to,
     subject,
     html,

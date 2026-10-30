@@ -51,13 +51,13 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       await sendMail(user.email, subject, `
         <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:0;background:#f9f9f9;border-radius:12px;overflow:hidden;">
           <div style="background:linear-gradient(135deg,#08192E,#0D2847);padding:28px 32px;">
-            <p style="color:rgba(255,255,255,0.5);margin:0;font-size:13px;">Selebration</p>
+            <p style="color:rgba(255,255,255,0.5);margin:0;font-size:13px;">Selliberation</p>
           </div>
           <div style="padding:32px;">
             <div style="font-size:15px;color:#333;line-height:1.7;white-space:pre-wrap;">${personalised}</div>
             <hr style="border:none;border-top:1px solid #eee;margin:28px 0;" />
             <p style="font-size:12px;color:#aaa;margin:0;">
-              You're receiving this message from the Selebration team.
+              You're receiving this message from the Selliberation team.
             </p>
           </div>
         </div>

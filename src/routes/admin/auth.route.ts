@@ -88,9 +88,9 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     otpStore.set(email, { otp, expiresAt: Date.now() + 10 * 60 * 1000, attempts: 0 });
 
-    await sendMail(email, 'Your Selebration Admin OTP', `
+    await sendMail(email, 'Your Selliberation Admin OTP', `
       <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;background:#0D2847;border-radius:12px;color:#fff;">
-        <h2 style="color:#F5820A;margin-top:0;">Selebration Admin</h2>
+        <h2 style="color:#F5820A;margin-top:0;">Selliberation Admin</h2>
         <p>Password reset requested for: <strong>${email}</strong></p>
         <p>Your one-time password:</p>
         <div style="font-size:48px;font-weight:bold;letter-spacing:12px;text-align:center;padding:24px;background:rgba(245,130,10,0.15);border-radius:8px;color:#F5820A;margin:16px 0;">
