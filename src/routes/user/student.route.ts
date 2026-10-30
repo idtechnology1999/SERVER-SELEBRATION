@@ -11,6 +11,7 @@ import { Notification } from '../../models/Notification.js';
 import { Admin } from '../../models/Admin.js';
 import { emit } from '../../socket.js';
 import { accessibleStages, paidUntilOf } from '../../utils/stages.js';
+import { balanceFor, minWithdrawal } from '../../utils/payouts.js';
 
 const router = Router();
 router.use(requireUserAuth);
@@ -30,15 +31,21 @@ router.get('/dashboard', async (req: UserAuthRequest, res: Response) => {
       return;
     }
 
-    const totalEarned = commissions.reduce((s, c) => s + c.amount, 0);
-    const pending = commissions.filter(c => c.status === 'pending').reduce((s, c) => s + c.amount, 0);
-    const withdrawable = commissions.filter(c => c.status === 'withdrawable' || c.status === 'pending').reduce((s, c) => s + c.amount, 0);
-    const withdrawn = commissions.filter(c => c.status === 'withdrawn').reduce((s, c) => s + c.amount, 0);
+    // Earnings are released weekly (Thursday 10pm); only released money can be withdrawn.
+    const balance = await balanceFor(userId);
 
     res.json({
       success: true,
       data: {
-        stats: { totalEarned, pending, withdrawable, withdrawn },
+        stats: {
+          totalEarned: balance.totalEarned,
+          pending: balance.pending,
+          withdrawable: balance.available,
+          inWithdrawal: balance.inWithdrawal,
+          withdrawn: balance.withdrawn,
+        },
+        nextPayoutAt: balance.nextReleaseAt,
+        minWithdrawal: await minWithdrawal(),
         referralCount: user.referrals,
         stage: user.stage,
         subscription: user.subscription,
@@ -152,26 +159,36 @@ router.post('/withdrawals', async (req: UserAuthRequest, res: Response) => {
 
     const { bankName, bankCode, accountNumber, accountName } = user as any;
 
-    const withdrawable = await Commission.find({ beneficiary: userId, status: { $in: ['pending', 'withdrawable'] } });
-    const totalWithdrawable = withdrawable.reduce((s, c) => s + c.amount, 0);
+    const requested = Math.floor(Number(amount));
+    if (!Number.isFinite(requested) || requested <= 0) {
+      res.status(400).json({ success: false, message: 'Please enter a valid amount' });
+      return;
+    }
 
-    const MIN = 10000;
-    if (totalWithdrawable < MIN) {
-      res.status(400).json({ success: false, message: `Minimum withdrawal is ₦${MIN.toLocaleString()}` });
+    // One request at a time keeps the balance simple and stops double requests.
+    if (await Withdrawal.exists({ user: userId, status: 'pending' })) {
+      res.status(400).json({ success: false, message: 'You already have a withdrawal waiting for approval.' });
       return;
     }
-    if (Number(amount) > totalWithdrawable) {
-      res.status(400).json({ success: false, message: 'Amount exceeds your withdrawable balance' });
+
+    const { available } = await balanceFor(userId);
+    const MIN = await minWithdrawal();
+    if (available < MIN) {
+      res.status(400).json({ success: false, message: `Minimum withdrawal is ₦${MIN.toLocaleString()}. Earnings are released every Thursday at 10pm.` });
       return;
     }
-    if (Number(amount) < MIN) {
+    if (requested > available) {
+      res.status(400).json({ success: false, message: 'Amount exceeds your available balance' });
+      return;
+    }
+    if (requested < MIN) {
       res.status(400).json({ success: false, message: `Minimum withdrawal is ₦${MIN.toLocaleString()}` });
       return;
     }
 
     const withdrawal = await Withdrawal.create({
       user: userId,
-      amount: Number(amount),
+      amount: requested,
       bankName,
       bankCode,
       accountNumber,

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Response } from 'express';
-import { Withdrawal, Commission, Notification } from '../../models/index.js';
+import { Withdrawal, Notification } from '../../models/index.js';
 import { requireAuth, type AuthRequest } from '../../middleware/auth.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
 import { emit } from '../../socket.js';
@@ -19,14 +19,16 @@ router.get('/', asyncHandler(async (_req: AuthRequest, res: Response) => {
 }));
 
 router.put('/:id/approve', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const withdrawal = await Withdrawal.findByIdAndUpdate(req.params.id, { status: 'approved' }, { new: true });
-  if (!withdrawal) { res.status(404).json({ success: false, message: 'Withdrawal not found' }); return; }
-  
-  // Mark commissions as withdrawn
-  await Commission.updateMany(
-    { beneficiary: withdrawal.user, status: { $in: ['pending', 'withdrawable'] } },
-    { status: 'withdrawn' }
+  // Only a pending request can be approved (stops approving the same one twice).
+  const withdrawal = await Withdrawal.findOneAndUpdate(
+    { _id: req.params.id, status: 'pending' },
+    { status: 'approved' },
+    { new: true },
   );
+  if (!withdrawal) { res.status(404).json({ success: false, message: 'Pending withdrawal not found' }); return; }
+
+  // Balances are worked out from withdrawals, so only the approved amount is paid out;
+  // the rest of the user's earnings stay available.
 
   // Notify user
   await Notification.create({
@@ -51,12 +53,12 @@ router.put('/:id/approve', asyncHandler(async (req: AuthRequest, res: Response) 
 }));
 
 router.put('/:id/reject', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const withdrawal = await Withdrawal.findByIdAndUpdate(
-    req.params.id,
+  const withdrawal = await Withdrawal.findOneAndUpdate(
+    { _id: req.params.id, status: 'pending' },
     { status: 'rejected', reason: req.body.reason || 'Rejected by admin' },
     { new: true }
   );
-  if (!withdrawal) { res.status(404).json({ success: false, message: 'Withdrawal not found' }); return; }
+  if (!withdrawal) { res.status(404).json({ success: false, message: 'Pending withdrawal not found' }); return; }
   
   // Notify user
   await Notification.create({
