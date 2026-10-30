@@ -23,8 +23,8 @@ export const STAGE_LABELS: Record<StageKey, string> = {
 };
 
 // Days of access kept after a paid month ends, before stages lock.
-// Not decided yet — change here (or set GRACE_DAYS in the server env).
-export const DEFAULT_GRACE_DAYS = 3;
+// 1 day (decided Oct 2026). Change here, or set GRACE_DAYS in the server env.
+export const DEFAULT_GRACE_DAYS = 1;
 export function graceDays(): number {
   const raw = process.env.GRACE_DAYS;
   const fromEnv = raw ? Number(raw) : NaN;

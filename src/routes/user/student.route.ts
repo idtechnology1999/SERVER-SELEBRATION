@@ -244,6 +244,17 @@ router.get('/referrals', async (req: UserAuthRequest, res: Response) => {
       return;
     }
 
+    // Older accounts may have no code: create one so their link always works.
+    if (!user.referralCode) {
+      for (let attempt = 0; attempt < 5 && !user.referralCode; attempt++) {
+        const code = 'SELL-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+        if (!(await User.exists({ referralCode: code }))) {
+          user.referralCode = code;
+          await user.save();
+        }
+      }
+    }
+
     const directReferrals = await User.find({ referredBy: user.referralCode })
       .select('name email stage subscription joined createdAt')
       .sort({ createdAt: -1 });
